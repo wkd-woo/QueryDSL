@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
 import study.querydsl.dto.MemberDto;
 import study.querydsl.dto.QMemberDto;
@@ -732,6 +733,104 @@ public class QuerydslBasicTest {
     // 조합 가능 *null 체크는 주의해서 처리해야함
     private BooleanExpression allEq(String usernameCond, Integer ageCond) {
         return usernameEq(usernameCond).and(ageEq(ageCond));
+    }
+
+    /**
+     * 수정, 삭제 벌크 연산
+     * 쿼리 한번으로 대량 데이터 수정
+     */
+
+    @Test
+    @Commit
+    void bulkUpdate() {
+        
+        /*
+        member1 = 10 -> DB member1
+        member2 = 20 -> DB member2
+        member3 = 30 -> DB member3
+        member4 = 40 -> DB member4
+         */
+        long count = queryFactory
+                .update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
+
+
+        /**
+         * 벌크 연산을 하고 나면,영속성 컨텍스트를 clear 해주는 것이 좋다.
+         * DB는 update 됐지만, 영속성 컨텍스트에는 이전 value가 남아 있다.
+         * 이 때, DB에서 같은 Entity를 끌어 올리면? 영속성 컨텍스트의 Entity가 우선권을 가짐
+         * -> DB에서 끌어올린 value는 버린다.
+         */
+        em.flush();
+        em.clear();
+
+        /*
+        1 member1 = 10 -> 1 DB 비회원
+        2 member2 = 20 -> 2 DB 비회원
+        3 member3 = 30 -> 3 DB member3
+        4 member4 = 40 -> 4 DB member4
+         */
+
+        List<Member> members = queryFactory
+                .selectFrom(member)
+                .fetch();
+
+        for (Member mem : members) {
+            System.out.println("mem = " + mem);
+        }
+
+    }
+
+    @Test
+    void bulkAdd() {
+        long count = queryFactory
+                .update(member)
+                .set(member.age, member.age.add(1))
+                .execute();
+    }
+
+    @Test
+    void bulkDelete() {
+        long count = queryFactory
+                .delete(member)
+                .where(member.age.gt(18))
+                .execute();
+    }
+
+    /**
+     * SQL function 호출하기
+     * SQL function은 JPA와 같이 Dialect에 등록된 내용만 호출할 수 있다
+     */
+
+    @Test
+    void sqlFunction() {
+        List<String> result = queryFactory
+                .select(Expressions.stringTemplate(
+                        "function('replace', {0}, {1}, {2})",
+                        member.username, "member", "M"))
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+    }
+
+    @Test
+    void sqlFunction2() {
+        List<String> result = queryFactory
+                .select(member.username)
+                .from(member)
+                .where(member.username.eq(
+                        Expressions.stringTemplate("function('lower', {0})",
+                                member.username)))
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
     }
 
 }
